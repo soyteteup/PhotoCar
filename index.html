@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LINE GPS Photo & License Plate Reporter</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Leaflet Map CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- LINE LIFF SDK -->
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap');
+    * {
+      font-family: 'Prompt', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .scanner-line {
+      background: linear-gradient(180deg, rgba(16, 185, 129, 0) 0%, rgba(16, 185, 129, 0.8) 50%, rgba(16, 185, 129, 0) 100%);
+      animation: scan 2.5s ease-in-out infinite;
+    }
+    @keyframes scan {
+      0%, 100% { transform: translateY(-100%); }
+      50% { transform: translateY(1000%); }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between overflow-x-hidden select-none">
+
+  <!-- แถบหัวเรื่องด้านบน (Header) -->
+  <header class="bg-slate-900/90 backdrop-blur border-b border-slate-800 sticky top-0 z-40 px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center space-x-2.5">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-green-500 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white font-bold text-lg">
+        <i class="fa-solid fa-car-on"></i>
+      </div>
+      <div>
+        <h1 class="text-base font-semibold leading-tight text-white flex items-center gap-1.5">
+          LINE GPS Snap
+          <span class="text-[10px] bg-emerald-500/20 text-emerald-400 font-mono px-1.5 py-0.5 rounded border border-emerald-500/30">AI PRO</span>
+        </h1>
+        <p class="text-xs text-slate-400">รูปภาพ • ทะเบียน • ยี่ห้อ • สี • พิกัด • แผนที่</p>
+      </div>
+    </div>
+    
+    <div class="flex items-center space-x-2">
+      <!-- ป้ายแสดงสถานะ GPS -->
+      <div id="gpsStatusPill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+        <span id="gpsStatusText">รอพิกัด...</span>
+      </div>
+      <!-- ปุ่มตั้งค่า -->
+      <button onclick="toggleModal('settingsModal', true)" class="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 flex items-center justify-center transition">
+        <i class="fa-solid fa-gear text-sm"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- พื้นที่ทำงานหลัก (Main Content) -->
+  <main class="flex-1 relative flex flex-col items-center justify-center p-3 max-w-lg mx-auto w-full">
+    
+    <!-- หน้าจอกล้องสด (Camera Viewport) -->
+    <div id="cameraContainer" class="relative w-full aspect-[3/4] bg-black rounded-3xl overflow-hidden border border-slate-800 shadow-2xl flex flex-col justify-between">
+      <video id="videoElement" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover"></video>
+      
+      <!-- หน้าต่างแสดงข้อมูล HUD บนภาพสด -->
+      <div class="absolute inset-0 pointer-events-none p-4 flex flex-col justify-between z-10">
+        <div class="flex justify-between items-start">
+          <div class="bg-black/60 backdrop-blur-md rounded-2xl p-2.5 border border-white/10 text-xs space-y-1 shadow-lg max-w-[80%]">
+            <div class="flex items-center text-emerald-400 font-semibold gap-1.5">
+              <i class="fa-solid fa-satellite-dish"></i>
+              <span id="hudCoords">พิกัด: กำลังค้นหาสัญญาณ...</span>
+            </div>
+            <div class="text-[11px] text-slate-300 truncate" id="hudAddress">
+              ที่อยู่: กำลังระบุตำแหน่ง...
+            </div>
+          </div>
+          <!-- ปุ่มสลับกล้อง -->
+          <button id="switchCamBtn" onclick="switchCamera()" class="pointer-events-auto w-10 h-10 rounded-full bg-black/60 backdrop-blur border border-white/20 text-white flex items-center justify-center active:scale-90 transition">
+            <i class="fa-solid fa-camera-rotate text-sm"></i>
+          </button>
+        </div>
+
+        <!-- กรอบช่วยเล็งป้ายทะเบียนและตัวรถ -->
+        <div class="relative w-full h-44 flex flex-col items-center justify-center pointer-events-none">
+          <div class="relative w-[84%] max-w-xs h-28 border-2 border-dashed border-emerald-400/80 rounded-2xl flex flex-col items-center justify-between p-2 bg-black/30 backdrop-blur-xs shadow-2xl">
+            <div class="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-emerald-300"></div>
+            <div class="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 border-emerald-300"></div>
+            <div class="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 border-emerald-300"></div>
+            <div class="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-emerald-300"></div>
+            
+            <div class="flex items-center gap-1.5 text-[11px] text-emerald-300 font-semibold bg-black/70 px-2.5 py-0.5 rounded-full border border-emerald-500/40">
+              <i class="fa-solid fa-car-rear text-xs"></i> กรอบเล็งป้ายทะเบียนรถ
+            </div>
+            <div class="text-[10px] text-slate-300 text-center font-medium">
+              AI วิเคราะห์ทะเบียน ยี่ห้อ สี และประเภทรถอัตโนมัติ
+            </div>
+            <div class="scanner-line absolute inset-x-2 h-1"></div>
+          </div>
+        </div>
+
+        <div id="gpsAccuracyWarning" class="hidden bg-amber-500/90 text-black text-[11px] font-medium py-1 px-3 rounded-full mx-auto shadow-md">
+          <i class="fa-solid fa-triangle-exclamation mr-1"></i> สัญญาณ GPS คลาดเคลื่อน ออกมาที่โล่งแจ้งเพื่อพิกัดที่แม่นยำ
+        </div>
+      </div>
+    </div>
+
+    <!-- หน้าตรวจสอบภาพถ่ายและข้อมูลก่อนส่ง (Review Container) -->
+    <div id="previewContainer" class="hidden w-full flex-col space-y-3">
+      <!-- รูปภาพถ่ายพร้อมลายน้ำจริง -->
+      <div class="relative w-full aspect-[3/4] bg-black rounded-3xl overflow-hidden border border-slate-800 shadow-2xl">
+        <img id="stampedPreviewImg" class="w-full h-full object-contain bg-slate-900" alt="รูปถ่ายพร้อมพิกัด" />
+        <span class="absolute top-3 left-3 bg-emerald-600/90 backdrop-blur text-white text-xs px-2.5 py-1 rounded-full shadow font-medium flex items-center gap-1">
+          <i class="fa-solid fa-circle-check"></i> ประทับตราข้อมูลเรียบร้อย
+        </span>
+      </div>
+
+      <!-- กล่องข้อมูลการตรวจจับยานพาหนะ (Vehicle Details Card) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2.5 shadow-lg">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-white flex items-center gap-1.5">
+            <i class="fa-solid fa-car-rear text-emerald-400"></i> ผลสแกนข้อมูลรถยนต์ (AI Vision)
+          </span>
+          <span id="plateScanBadge" class="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+            <i class="fa-solid fa-spinner fa-spin"></i> AI กำลังอ่านข้อมูลรถ...
+          </span>
+        </div>
+
+        <!-- ฟอร์มแยก ทะเบียนรถ, ยี่ห้อรถ, สีรถ, ประเภทรถ -->
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <div class="col-span-2">
+            <label class="block text-[10px] text-slate-400 mb-0.5">🚗 ป้ายทะเบียนรถ และ จังหวัด:</label>
+            <input type="text" id="plateNumberInput" oninput="updateWatermarkBadge()" placeholder="เช่น 1กข 9999 กรุงเทพมหานคร" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-2.5 py-2 text-xs font-bold text-amber-300 tracking-wider focus:outline-none transition" />
+          </div>
+          <div>
+            <label class="block text-[10px] text-slate-400 mb-0.5">🏷️ ยี่ห้อรถ:</label>
+            <input type="text" id="brandInput" oninput="updateWatermarkBadge()" placeholder="เช่น Toyota, Honda, Isuzu" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-2.5 py-2 text-xs text-slate-200 focus:outline-none transition" />
+          </div>
+          <div>
+            <label class="block text-[10px] text-slate-400 mb-0.5">🎨 สีรถ:</label>
+            <input type="text" id="colorInput" oninput="updateWatermarkBadge()" placeholder="เช่น สีขาว, สีดำ, สีบรอนซ์เงิน" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-2.5 py-2 text-xs text-slate-200 focus:outline-none transition" />
+          </div>
+          <div class="col-span-2">
+            <label class="block text-[10px] text-slate-400 mb-0.5">🚙 ประเภทรถ:</label>
+            <input type="text" id="vehicleTypeInput" oninput="updateWatermarkBadge()" placeholder="เช่น รถเก๋ง, รถกระบะ, รถตู้" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-2.5 py-2 text-xs text-slate-300 focus:outline-none transition" />
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-800/80">
+          <button type="button" onclick="rescanPlateWithAI()" class="text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1 active:scale-95 transition">
+            <i class="fa-solid fa-arrows-rotate"></i> วิเคราะห์ข้อมูลรถใหม่อีกครั้ง
+          </button>
+          <span class="text-[10px] text-slate-500">สามารถแก้ไขข้อมูลได้ตลอดเวลา</span>
+        </div>
+      </div>
+
+      <!-- แผนที่ย่อ Leaflet จำลองพิกัดจริง -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 shadow-lg">
+        <div class="flex items-center justify-between text-xs text-slate-300 mb-1.5 px-1">
+          <span class="font-medium flex items-center gap-1 text-emerald-400">
+            <i class="fa-solid fa-map-location-dot"></i> จุดที่ถ่ายบนแผนที่
+          </span>
+          <a id="openGoogleMapsLink" href="#" target="_blank" class="text-blue-400 hover:underline flex items-center gap-1 text-[11px]">
+            เปิด Google Maps <i class="fa-solid fa-arrow-up-right-from-square"></i>
+          </a>
+        </div>
+        <div id="miniMap" class="w-full h-28 rounded-xl z-0 overflow-hidden border border-slate-800"></div>
+      </div>
+
+      <!-- บันทึกหมายเหตุเพิ่มเติม -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
+        <label class="block text-xs font-medium text-slate-300">
+          <i class="fa-solid fa-pen-to-square text-emerald-400 mr-1"></i> บันทึกรายละเอียดเพิ่มเติม:
+        </label>
+        <textarea id="reportNoteInput" rows="2" placeholder="เช่น ตรวจสอบรถเข้า-ออกพื้นที่ หรือ จอดในที่ห้ามจอด..." class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500 transition resize-none"></textarea>
+      </div>
+    </div>
+
+    <!-- Canvas สำหรับประมวลผลลายน้ำ (ซ่อนไว้เบื้องหลัง) -->
+    <canvas id="photoCanvas" class="hidden"></canvas>
+    <!-- อินพุตไฟล์รูปภาพสำรองกรณีกล้องมือถือไม่เปิด -->
+    <input type="file" id="fileFallbackInput" accept="image/*" capture="environment" class="hidden" onchange="handleFileFallback(event)">
+  </main>
+
+  <!-- แถบปุ่มควบคุมด้านล่าง (Bottom Controller) -->
+  <footer class="bg-slate-900/90 backdrop-blur border-t border-slate-800 p-4 sticky bottom-0 z-40 max-w-lg mx-auto w-full">
+    <!-- แถบปุ่มในโหมดกล้องถ่ายภาพ -->
+    <div id="cameraControls" class="flex items-center justify-around">
+      <button onclick="document.getElementById('fileFallbackInput').click()" class="flex flex-col items-center text-slate-400 hover:text-white transition active:scale-95">
+        <div class="w-11 h-11 rounded-2xl bg-slate-800 flex items-center justify-center border border-slate-700 mb-1">
+          <i class="fa-solid fa-images text-base"></i>
+        </div>
+        <span class="text-[11px]">เลือกรูป</span>
+      </button>
+
+      <button id="snapBtn" onclick="takeSnapshot()" class="relative group active:scale-90 transition">
+        <div class="w-20 h-20 rounded-full border-4 border-emerald-500 flex items-center justify-center bg-white/10 backdrop-blur group-hover:scale-105 transition shadow-lg shadow-emerald-500/30">
+          <div class="w-16 h-16 rounded-full bg-emerald-500 flex items-center justify-center text-white text-xl shadow-inner">
+            <i class="fa-solid fa-camera"></i>
+          </div>
+        </div>
+      </button>
+
+      <button onclick="requestHighAccuracyGPS()" class="flex flex-col items-center text-slate-400 hover:text-white transition active:scale-95">
+        <div class="w-11 h-11 rounded-2xl bg-slate-800 flex items-center justify-center border border-slate-700 mb-1">
+          <i class="fa-solid fa-location-crosshairs text-base"></i>
+        </div>
+        <span class="text-[11px]">จับ GPS ใหม่</span>
+      </button>
+    </div>
+
+    <!-- แถบปุ่มในโหมดตรวจสอบภาพก่อนส่ง -->
+    <div id="previewControls" class="hidden flex flex-col space-y-2">
+      <div class="grid grid-cols-2 gap-2">
+        <button onclick="resetToCamera()" class="w-full py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-2 border border-slate-700 active:scale-98 transition">
+          <i class="fa-solid fa-rotate-left"></i> ถ่ายใหม่
+        </button>
+        <button onclick="downloadStampedPhoto()" class="w-full py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-2 border border-slate-700 active:scale-98 transition">
+          <i class="fa-solid fa-download"></i> บันทึกรูปลงเครื่อง
+        </button>
+      </div>
+
+      <!-- ปุ่มส่งเข้า LINE ทันที -->
+      <button id="sendLineBtn" onclick="dispatchToLine()" class="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-[#06C755] to-[#05b34c] hover:opacity-95 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-600/30 active:scale-98 transition">
+        <i class="fa-brands fa-line text-2xl"></i> ส่งภาพและข้อมูลเข้า LINE
+      </button>
+    </div>
+  </footer>
+
+  <!-- Modal ตั้งค่าการเชื่อมต่อ -->
+  <div id="settingsModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-semibold text-white flex items-center gap-2">
+          <i class="fa-solid fa-sliders text-emerald-400"></i> ตั้งค่าการเชื่อมต่อ LINE
+        </h3>
+        <button onclick="toggleModal('settingsModal', false)" class="text-slate-400 hover:text-white p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <!-- รูปแบบการส่ง -->
+      <div class="space-y-2">
+        <label class="block text-xs font-medium text-slate-300">ช่องทางการส่งข้อมูล:</label>
+        <select id="lineSendMode" onchange="onSendModeChanged()" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+          <option value="gas">1. Google Apps Script Webhook (แนะนำ: ส่งภาพธรรมดา+ข้อความเข้า LINE ส่วนตัว)</option>
+          <option value="liff">2. LINE LIFF (เปิดเลือกห้องแชทใน LINE โดยตรง)</option>
+          <option value="direct">3. LINE Direct Share (เซฟรูปลงเครื่องและเปิดแอป LINE ด่วน)</option>
+        </select>
+      </div>
+
+      <!-- การตั้งค่า Webhook URL -->
+      <div id="gasConfigSection" class="space-y-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800">
+        <div>
+          <label class="block text-[11px] font-medium text-slate-300 mb-1">
+            Google Apps Script Webhook URL:
+          </label>
+          <input type="url" id="webhookUrlInput" placeholder="https://script.google.com/macros/s/AKfycbzT__EUVPG4-FkCNijn3KAj4tl9ZmuOZfvu5MOqSCoZ4m03_eOfzV6Y08zhkA9As7QZ/exec" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-emerald-500" />
+          <p class="text-[10px] text-slate-400 mt-1">URL Web App จาก Google Apps Script ที่ Deploy ไว้</p>
+        </div>
+      </div>
+
+      <!-- การตั้งค่า LIFF -->
+      <div id="liffConfigSection" class="hidden space-y-2 bg-slate-950/60 p-3 rounded-2xl border border-slate-800">
+        <label class="block text-[11px] font-medium text-slate-300">LINE LIFF ID:</label>
+        <input type="text" id="liffIdInput" placeholder="เช่น 1234567890-AbCdEfGh" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-emerald-500" />
+      </div>
+
+      <!-- ชื่อหน่วยงาน -->
+      <div class="space-y-2 border-t border-slate-800 pt-3">
+        <label class="block text-xs font-medium text-slate-300">ชื่อหน่วยงาน / หัวข้อลายน้ำบนภาพ:</label>
+        <input type="text" id="orgNameInput" value="หน่วยงานตรวจสอบและรายงานภาคสนาม" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500" />
+      </div>
+
+      <div class="pt-2">
+        <button onclick="saveSettings()" class="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 rounded-xl text-white font-semibold text-xs transition">
+          บันทึกการตั้งค่า
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- กล่อง Toast แจ้งเตือน -->
+  <div id="toastBox" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 hidden transition-all duration-300 max-w-xs w-full px-4">
+    <div id="toastContent" class="bg-slate-900 border border-slate-700 text-white text-xs px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3">
+      <div id="toastIcon" class="text-base text-emerald-400"></div>
+      <div id="toastMsg" class="flex-1"></div>
+    </div>
+  </div>
+
+  <script>
+    /* =====================================================================
+       Application State Variables
+    ===================================================================== */
+    let videoStream = null;
+    let currentFacingMode = 'environment';
+    let leafletMap = null;
+    let mapMarker = null;
+
+    let currentCoordinates = {
+      lat: null,
+      lng: null,
+      accuracy: null,
+      address: 'กำลังดึงตำแหน่ง...'
+    };
+
+    let rawCapturedImage = null;
+    let stampedDataUrl = null;
+    let isLiffInitialized = false;
+
+    let appConfig = {
+      sendMode: localStorage.getItem('snap_sendMode') || 'gas',
+      webhookUrl: localStorage.getItem('snap_webhookUrl') || '',
+      liffId: localStorage.getItem('snap_liffId') || '',
+      orgName: localStorage.getItem('snap_orgName') || 'หน่วยงานตรวจสอบและรายงานภาคสนาม'
+    };
+
+    /* =====================================================================
+       Lifecycle Initialization
+    ===================================================================== */
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('lineSendMode').value = appConfig.sendMode;
+      document.getElementById('webhookUrlInput').value = appConfig.webhookUrl;
+      document.getElementById('liffIdInput').value = appConfig.liffId;
+      document.getElementById('orgNameInput').value = appConfig.orgName;
+      onSendModeChanged();
+
+      initCamera();
+      requestHighAccuracyGPS();
+
+      if (appConfig.liffId && typeof liff !== 'undefined') {
+        initLiff(appConfig.liffId);
+      }
+    });
+
+    /* =====================================================================
+       Camera Operations
+    ===================================================================== */
+    async function initCamera() {
+      const video = document.getElementById('videoElement');
+      try {
+        if (videoStream) {
+          videoStream.getTracks().forEach(track => track.stop());
+        }
+
+        const constraints = {
+          audio: false,
+          video: {
+            facingMode: { ideal: currentFacingMode },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          }
+        };
+
+        videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = videoStream;
+        await video.play();
+      } catch (err) {
+        console.warn("Camera access warning:", err);
+        showToast("ไม่สามารถเปิดกล้องสดได้ โปรดใช้ปุ่ม 'เลือกรูป' ด้านล่าง", "warning");
+      }
+    }
+
+    function switchCamera() {
+      currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
+      initCamera();
+    }
+
+    /* =====================================================================
+       High Precision Geolocation & Reverse Geocoding
+    ===================================================================== */
+    function requestHighAccuracyGPS() {
+      const pill = document.getElementById('gpsStatusPill');
+      const text = document.getElementById('gpsStatusText');
+      const hudCoords = document.getElementById('hudCoords');
+      const hudAddress = document.getElementById('hudAddress');
+
+      text.innerText = "กำลังจับ GPS...";
+      pill.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20";
+
+      if (!navigator.geolocation) {
+        showToast("เบราว์เซอร์ไม่รองรับ GPS", "error");
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+          currentCoordinates.lat = latitude;
+          currentCoordinates.lng = longitude;
+          currentCoordinates.accuracy = accuracy;
+
+          text.innerText = `±${Math.round(accuracy)} ม.`;
+          pill.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+
+          const accWarning = document.getElementById('gpsAccuracyWarning');
+          if (accuracy > 35) {
+            accWarning.classList.remove('hidden');
+          } else {
+            accWarning.classList.add('hidden');
+          }
+
+          hudCoords.innerText = `พิกัด: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+
+          try {
+            const address = await fetchAddressFromCoords(latitude, longitude);
+            currentCoordinates.address = address;
+            hudAddress.innerText = `ที่อยู่: ${address}`;
+          } catch (e) {
+            currentCoordinates.address = "ใกล้พิกัด " + latitude.toFixed(5) + ", " + longitude.toFixed(5);
+            hudAddress.innerText = currentCoordinates.address;
+          }
+        },
+        (error) => {
+          console.error("GPS Error:", error);
+          text.innerText = "GPS ล้มเหลว";
+          pill.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20";
+          showToast("ไม่สามารถดึงตำแหน่ง GPS ได้ โปรดเปิด Location ในมือถือ", "error");
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    }
+
+    async function fetchAddressFromCoords(lat, lng) {
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=th`, {
+          headers: { 'Accept-Language': 'th' }
+        });
+        const data = await response.json();
+        return data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      } catch (err) {
+        return `ละติจูด: ${lat.toFixed(5)}, ลองจิจูด: ${lng.toFixed(5)}`;
+      }
+    }
+
+    /* =====================================================================
+       Photo Capture & Canvas Watermarking
+    ===================================================================== */
+    function takeSnapshot() {
+      const video = document.getElementById('videoElement');
+      if (!video.videoWidth || !video.videoHeight) {
+        showToast("กล้องยังไม่พร้อมใช้งาน", "error");
+        return;
+      }
+
+      if (!currentCoordinates.lat || !currentCoordinates.lng) {
+        showToast("กำลังดึงสัญญาณ GPS โปรดรอสักครู่", "warning");
+        requestHighAccuracyGPS();
+      }
+
+      const canvas = document.getElementById('photoCanvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const rawImg = new Image();
+      const rawBase64 = canvas.toDataURL('image/jpeg', 0.90);
+      rawImg.onload = () => {
+        rawCapturedImage = rawImg;
+        applyStampToCanvas();
+        stampedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        displayPreview(stampedDataUrl);
+
+        analyzeVehicleWithGemini(rawBase64);
+      };
+      rawImg.src = rawBase64;
+    }
+
+    function handleFileFallback(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          rawCapturedImage = img;
+          const canvas = document.getElementById('photoCanvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+
+          applyStampToCanvas();
+          stampedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+          displayPreview(stampedDataUrl);
+
+          analyzeVehicleWithGemini(e.target.result);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    /* =====================================================================
+       AI Vehicle & Plate Recognition (Gemini Flash Vision)
+    ===================================================================== */
+    async function analyzeVehicleWithGemini(imageDataUrl) {
+      const badge = document.getElementById('plateScanBadge');
+      const plateInput = document.getElementById('plateNumberInput');
+      const brandInput = document.getElementById('brandInput');
+      const colorInput = document.getElementById('colorInput');
+      const typeInput = document.getElementById('vehicleTypeInput');
+
+      badge.className = "text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1";
+      badge.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> AI กำลังอ่านข้อมูลรถ...`;
+
+      try {
+        const base64Data = imageDataUrl.split(',')[1];
+        const payload = {
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: "ตรวจสอบภาพนี้เพื่อระบุและอ่านข้อมูลรถยนต์อย่างละเอียด: 1. ป้ายทะเบียนรถ หมวดอักษร ตัวเลข และจังหวัด 2. ยี่ห้อรถ (เช่น Toyota, Honda, Isuzu, Mazda, Ford ฯลฯ) 3. สีของตัวรถ (เช่น สีขาว, สีดำ, สีบรอนซ์เงิน, สีเทา, สีแดง) 4. ประเภทของรถ (เช่น รถเก๋ง, รถกระบะ, รถตู้, รถบรรทุก, รถ SUV, รถมอเตอร์ไซค์) ตอบเป็น JSON ตามโครงสร้างที่กำหนด หากไม่พบป้ายทะเบียนให้ตั้ง detected=false"
+                },
+                {
+                  inlineData: {
+                    mimeType: "image/jpeg",
+                    data: base64Data
+                  }
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                detected: { type: "BOOLEAN", description: "ตรวจพบป้ายทะเบียนหรือไม่" },
+                plateNumber: { type: "STRING", description: "หมวดอักษรและตัวเลข เช่น 1กข 9999 หรือ ไม่พบป้าย" },
+                province: { type: "STRING", description: "จังหวัดบนป้าย เช่น กรุงเทพมหานคร หรือ ไม่ระบุ" },
+                brand: { type: "STRING", description: "ยี่ห้อรถ เช่น Toyota หรือ ไม่ระบุ" },
+                color: { type: "STRING", description: "สีรถ เช่น สีขาว หรือ ไม่ระบุ" },
+                vehicleType: { type: "STRING", description: "ประเภทรถ เช่น รถกระบะ หรือ รถเก๋ง" }
+              },
+              required: ["detected", "plateNumber", "province", "brand", "color", "vehicleType"]
+            }
+          }
+        };
+
+        const apiKey = "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+        let response = null;
+        let delay = 1000;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            response = await fetch(apiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            if (response.ok) break;
+          } catch (err) {
+            if (attempt === 2) throw err;
+            await new Promise(res => setTimeout(res, delay));
+            delay *= 2;
+          }
+        }
+
+        const data = await response.json();
+        const jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (jsonText) {
+          const parsed = JSON.parse(jsonText);
+          if (parsed.detected && parsed.plateNumber && parsed.plateNumber !== "ไม่พบป้าย") {
+            const fullPlate = parsed.province && parsed.province !== "ไม่ระบุ" 
+              ? `${parsed.plateNumber} ${parsed.province}` 
+              : parsed.plateNumber;
+
+            plateInput.value = fullPlate;
+            brandInput.value = parsed.brand || "-";
+            colorInput.value = parsed.color || "-";
+            typeInput.value = parsed.vehicleType || "รถยนต์";
+
+            badge.className = "text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1";
+            badge.innerHTML = `<i class="fa-solid fa-circle-check"></i> ตรวจพบข้อมูลรถสำเร็จ`;
+            showToast(`ตรวจพบทะเบียน: ${fullPlate}`, "success");
+          } else {
+            plateInput.value = "";
+            brandInput.value = parsed.brand || "-";
+            colorInput.value = parsed.color || "-";
+            typeInput.value = parsed.vehicleType || "รถยนต์";
+
+            badge.className = "text-[10px] px-2 py-0.5 rounded-full font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1";
+            badge.innerHTML = `<i class="fa-solid fa-circle-question"></i> ไม่พบป้าย (พิมพ์เองได้)`;
+          }
+        }
+      } catch (error) {
+        console.warn("AI Vehicle Recognition fallback:", error);
+        badge.className = "text-[10px] px-2 py-0.5 rounded-full font-medium bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1";
+        badge.innerHTML = `<i class="fa-solid fa-pen"></i> ใส่ข้อมูลด้วยตนเอง`;
+      }
+
+      updateWatermarkBadge();
+    }
+
+    function rescanPlateWithAI() {
+      if (!rawCapturedImage) {
+        showToast("ไม่มีภาพถ่ายต้นฉบับ", "warning");
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = rawCapturedImage.width;
+      canvas.height = rawCapturedImage.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(rawCapturedImage, 0, 0);
+      analyzeVehicleWithGemini(canvas.toDataURL('image/jpeg', 0.90));
+    }
+
+    function updateWatermarkBadge() {
+      if (!rawCapturedImage) return;
+      applyStampToCanvas();
+      const canvas = document.getElementById('photoCanvas');
+      stampedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+      document.getElementById('stampedPreviewImg').src = stampedDataUrl;
+    }
+
+    function applyStampToCanvas() {
+      if (!rawCapturedImage) return;
+      const canvas = document.getElementById('photoCanvas');
+      canvas.width = rawCapturedImage.width;
+      canvas.height = rawCapturedImage.height;
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+
+      ctx.drawImage(rawCapturedImage, 0, 0, width, height);
+
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+      const timeStr = now.toLocaleTimeString('th-TH', { hour12: false });
+      const fullTimeStr = `${dateStr} เวลา ${timeStr} น.`;
+
+      const latStr = currentCoordinates.lat ? currentCoordinates.lat.toFixed(6) : "N/A";
+      const lngStr = currentCoordinates.lng ? currentCoordinates.lng.toFixed(6) : "N/A";
+      const accStr = currentCoordinates.accuracy ? `ความคลาดเคลื่อน: ±${Math.round(currentCoordinates.accuracy)} เมตร` : "";
+      const addressStr = currentCoordinates.address || "ไม่ระบุตำแหน่ง";
+
+      const plateVal = document.getElementById('plateNumberInput')?.value?.trim() || "";
+      const brandVal = document.getElementById('brandInput')?.value?.trim() || "";
+      const colorVal = document.getElementById('colorInput')?.value?.trim() || "";
+      const typeVal = document.getElementById('vehicleTypeInput')?.value?.trim() || "";
+
+      const baseFontSize = Math.max(16, Math.floor(width * 0.026));
+      const padding = Math.floor(width * 0.035);
+      
+      const hasVehicleInfo = plateVal.length > 0 || brandVal.length > 0 || colorVal.length > 0;
+      const boxHeight = baseFontSize * (hasVehicleInfo ? 10.2 : 8);
+      const boxY = height - boxHeight - padding;
+
+      // กล่องพื้นหลังลายน้ำ Frosted Glass
+      ctx.save();
+      ctx.fillStyle = "rgba(10, 15, 29, 0.85)";
+      ctx.shadowColor = "rgba(0, 0, 0, 0.65)";
+      ctx.shadowBlur = 22;
+      roundRect(ctx, padding, boxY, width - (padding * 2), boxHeight, Math.floor(width * 0.022));
+      ctx.fill();
+      ctx.restore();
+
+      // ขอบลายน้ำ
+      ctx.save();
+      ctx.strokeStyle = "rgba(16, 185, 129, 0.45)";
+      ctx.lineWidth = Math.max(1.5, Math.floor(width * 0.0025));
+      roundRect(ctx, padding, boxY, width - (padding * 2), boxHeight, Math.floor(width * 0.022));
+      ctx.stroke();
+      ctx.restore();
+
+      const textX = padding + Math.floor(width * 0.03);
+      let textY = boxY + baseFontSize * 1.45;
+
+      // ชื่อหน่วยงาน
+      ctx.fillStyle = "#10b981";
+      ctx.font = `bold ${Math.floor(baseFontSize * 1.05)}px 'Prompt', sans-serif`;
+      ctx.fillText(`📍 ${appConfig.orgName}`, textX, textY);
+
+      // ทะเบียนรถ, ยี่ห้อ, สี, ประเภทรถ
+      if (hasVehicleInfo) {
+        textY += baseFontSize * 1.35;
+        ctx.fillStyle = "#facc15";
+        ctx.font = `bold ${Math.floor(baseFontSize * 1.15)}px 'Prompt', sans-serif`;
+        const plateDisplay = plateVal ? `🚗 ทะเบียน: ${plateVal}` : `🚗 ไม่ระบุทะเบียน`;
+        ctx.fillText(plateDisplay, textX, textY);
+
+        textY += baseFontSize * 1.25;
+        ctx.fillStyle = "#fef08a";
+        ctx.font = `500 ${Math.floor(baseFontSize * 0.95)}px 'Prompt', sans-serif`;
+        const vehicleDesc = `🏷️ ${brandVal || '-'} | 🎨 ${colorVal || '-'} | 🚙 ${typeVal || 'รถยนต์'}`;
+        ctx.fillText(vehicleDesc, textX, textY);
+      }
+
+      // วันเวลา
+      textY += baseFontSize * 1.35;
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `500 ${baseFontSize}px 'Prompt', sans-serif`;
+      ctx.fillText(`📅 ${fullTimeStr}`, textX, textY);
+
+      // พิกัด GPS
+      textY += baseFontSize * 1.35;
+      ctx.fillStyle = "#38bdf8";
+      ctx.font = `600 ${baseFontSize}px 'Prompt', monospace`;
+      ctx.fillText(`🌐 GPS: ${latStr}, ${lngStr} (${accStr})`, textX, textY);
+
+      // ที่อยู่
+      textY += baseFontSize * 1.35;
+      ctx.fillStyle = "#cbd5e1";
+      ctx.font = `400 ${Math.floor(baseFontSize * 0.9)}px 'Prompt', sans-serif`;
+      const maxChar = Math.floor((width - textX * 2) / (baseFontSize * 0.5));
+      const cleanAddress = addressStr.length > maxChar ? addressStr.substring(0, maxChar) + "..." : addressStr;
+      ctx.fillText(`🏠 ${cleanAddress}`, textX, textY);
+    }
+
+    function roundRect(ctx, x, y, width, height, radius) {
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + width - radius, y);
+      ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+      ctx.lineTo(x + width, y + height - radius);
+      ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+      ctx.lineTo(x + radius, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+    }
+
+    /* =====================================================================
+       Review & Leaflet Map Display
+    ===================================================================== */
+    function displayPreview(dataUrl) {
+      document.getElementById('cameraContainer').classList.add('hidden');
+      document.getElementById('cameraControls').classList.add('hidden');
+      document.getElementById('previewContainer').classList.remove('hidden');
+      document.getElementById('previewControls').classList.remove('hidden');
+
+      document.getElementById('stampedPreviewImg').src = dataUrl;
+
+      const lat = currentCoordinates.lat || 13.7563;
+      const lng = currentCoordinates.lng || 100.5018;
+      const googleMapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
+      document.getElementById('openGoogleMapsLink').href = googleMapsUrl;
+
+      setTimeout(() => {
+        if (!leafletMap) {
+          leafletMap = L.map('miniMap', {
+            center: [lat, lng],
+            zoom: 16,
+            zoomControl: false,
+            attributionControl: false
+          });
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(leafletMap);
+          mapMarker = L.marker([lat, lng]).addTo(leafletMap);
+        } else {
+          leafletMap.invalidateSize();
+          leafletMap.setView([lat, lng], 16);
+          if (mapMarker) mapMarker.setLatLng([lat, lng]);
+        }
+      }, 200);
+    }
+
+    function resetToCamera() {
+      document.getElementById('previewContainer').classList.add('hidden');
+      document.getElementById('previewControls').classList.add('hidden');
+      document.getElementById('cameraContainer').classList.remove('hidden');
+      document.getElementById('cameraControls').classList.remove('hidden');
+      document.getElementById('reportNoteInput').value = "";
+    }
+
+    function downloadStampedPhoto() {
+      if (!stampedDataUrl) return;
+      const link = document.createElement('a');
+      link.download = `Vehicle_${new Date().toISOString().slice(0,19).replace(/[-:]/g,"")}.jpg`;
+      link.href = stampedDataUrl;
+      link.click();
+      showToast("บันทึกรูปลงเครื่องเรียบร้อยแล้ว", "success");
+    }
+
+    /* =====================================================================
+       LINE Integration Engine
+    ===================================================================== */
+    async function dispatchToLine() {
+      const sendBtn = document.getElementById('sendLineBtn');
+      const note = document.getElementById('reportNoteInput').value.trim();
+      const plate = document.getElementById('plateNumberInput')?.value.trim() || "ไม่ระบุป้ายทะเบียน";
+      const brand = document.getElementById('brandInput')?.value.trim() || "-";
+      const color = document.getElementById('colorInput')?.value.trim() || "-";
+      const vehicleType = document.getElementById('vehicleTypeInput')?.value.trim() || "รถยนต์";
+      
+      const lat = currentCoordinates.lat || 0;
+      const lng = currentCoordinates.lng || 0;
+      const mapUrl = `https://maps.google.com/?q=${lat},${lng}`;
+      const nowStr = new Date().toLocaleString('th-TH');
+
+      const mode = appConfig.sendMode;
+
+      // MODE 1: Google Apps Script Webhook (ส่งรูปภาพธรรมดา + ข้อความส่วนตัว)
+      if (mode === 'gas') {
+        if (!appConfig.webhookUrl) {
+          showToast("ยังไม่ได้ตั้งค่า Google Apps Script Webhook URL", "warning");
+          toggleModal('settingsModal', true);
+          return;
+        }
+
+        try {
+          sendBtn.disabled = true;
+          sendBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-xl"></i> กำลังส่งรูปภาพและข้อมูลเข้า LINE...`;
+
+          const payload = {
+            image: stampedDataUrl,
+            lat: lat,
+            lng: lng,
+            accuracy: currentCoordinates.accuracy,
+            address: currentCoordinates.address,
+            plate: plate,
+            brand: brand,
+            color: color,
+            vehicleType: vehicleType,
+            mapUrl: mapUrl,
+            note: note,
+            timestamp: nowStr,
+            orgName: appConfig.orgName
+          };
+
+          await fetch(appConfig.webhookUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          showToast("ส่งรูปภาพและข้อมูลรถเข้า LINE ส่วนตัวสำเร็จแล้ว!", "success");
+        } catch (error) {
+          console.error("Webhook dispatch error:", error);
+          showToast("ส่งไม่สำเร็จ กรุณาตรวจสอบ Webhook URL", "error");
+        } finally {
+          sendBtn.disabled = false;
+          sendBtn.innerHTML = `<i class="fa-brands fa-line text-2xl"></i> ส่งภาพและข้อมูลเข้า LINE`;
+        }
+        return;
+      }
+
+      // MODE 2: LINE LIFF
+      if (mode === 'liff') {
+        if (!appConfig.liffId) {
+          showToast("โปรดใส่ LIFF ID ในหน้าตั้งค่าก่อนใช้งาน", "warning");
+          toggleModal('settingsModal', true);
+          return;
+        }
+
+        if (typeof liff === 'undefined' || !isLiffInitialized) {
+          showToast("ระบบ LIFF ยังไม่พร้อมใช้งาน", "error");
+          return;
+        }
+
+        if (liff.isApiAvailable('shareTargetPicker')) {
+          try {
+            sendBtn.disabled = true;
+            await liff.shareTargetPicker([
+              {
+                type: "text",
+                text: `🚗 [รายงานบันทึกข้อมูลรถ & พิกัด]\n🚘 ป้ายทะเบียน: ${plate}\n🏷️ ยี่ห้อ: ${brand}\n🎨 สี: ${color}\n🚙 ประเภท: ${vehicleType}\n🌐 พิกัด: ${lat.toFixed(6)}, ${lng.toFixed(6)}\n🏠 ที่อยู่: ${currentCoordinates.address}\n🗺️ แผนที่: ${mapUrl}\n📅 เวลา: ${nowStr}\n📝 บันทึก: ${note || '-'}`
+              }
+            ]);
+            showToast("ส่งเข้า LINE เรียบร้อยแล้ว!", "success");
+          } catch (err) {
+            console.error("LIFF Share error:", err);
+            showToast("ยกเลิกหรือเกิดข้อผิดพลาดในการส่ง", "error");
+          } finally {
+            sendBtn.disabled = false;
+          }
+        } else {
+          showToast("อุปกรณ์ไม่รองรับ Share Target Picker", "warning");
+        }
+        return;
+      }
+
+      // MODE 3: Direct LINE App Share
+      if (mode === 'direct') {
+        downloadStampedPhoto();
+
+        const shareMessage = encodeURIComponent(
+          `🚗 [รายงานบันทึกข้อมูลรถ & พิกัด]\n` +
+          `🚘 ป้ายทะเบียน: ${plate}\n` +
+          `🏷️ ยี่ห้อรถ: ${brand}\n` +
+          `🎨 สีรถ: ${color}\n` +
+          `🚙 ประเภท: ${vehicleType}\n` +
+          `🌐 พิกัด GPS: ${lat.toFixed(6)}, ${lng.toFixed(6)}\n` +
+          `🏠 ที่อยู่: ${currentCoordinates.address}\n` +
+          `🗺️ แผนที่ Google Maps:\n${mapUrl}\n` +
+          `📅 เวลา: ${nowStr}\n` +
+          `📝 บันทึก: ${note || '-'}`
+        );
+
+        showToast("บันทึกรูปแล้ว! กำลังเปิด LINE เพื่อแชร์...", "success");
+
+        setTimeout(() => {
+          window.location.href = `https://line.me/R/share?text=${shareMessage}`;
+        }, 1200);
+      }
+    }
+
+    async function initLiff(liffId) {
+      try {
+        await liff.init({ liffId: liffId });
+        isLiffInitialized = true;
+      } catch (err) {
+        console.warn("LIFF Init failed:", err);
+      }
+    }
+
+    /* =====================================================================
+       Settings Management
+    ===================================================================== */
+    function onSendModeChanged() {
+      const mode = document.getElementById('lineSendMode').value;
+      const gasSec = document.getElementById('gasConfigSection');
+      const liffSec = document.getElementById('liffConfigSection');
+
+      if (mode === 'gas') {
+        gasSec.classList.remove('hidden');
+        liffSec.classList.add('hidden');
+      } else if (mode === 'liff') {
+        gasSec.classList.add('hidden');
+        liffSec.classList.remove('hidden');
+      } else {
+        gasSec.classList.add('hidden');
+        liffSec.classList.add('hidden');
+      }
+    }
+
+    function saveSettings() {
+      appConfig.sendMode = document.getElementById('lineSendMode').value;
+      appConfig.webhookUrl = document.getElementById('webhookUrlInput').value.trim();
+      appConfig.liffId = document.getElementById('liffIdInput').value.trim();
+      appConfig.orgName = document.getElementById('orgNameInput').value.trim() || 'หน่วยงานภาคสนาม';
+
+      localStorage.setItem('snap_sendMode', appConfig.sendMode);
+      localStorage.setItem('snap_webhookUrl', appConfig.webhookUrl);
+      localStorage.setItem('snap_liffId', appConfig.liffId);
+      localStorage.setItem('snap_orgName', appConfig.orgName);
+
+      if (appConfig.liffId && typeof liff !== 'undefined') {
+        initLiff(appConfig.liffId);
+      }
+
+      toggleModal('settingsModal', false);
+      showToast("บันทึกการตั้งค่าเรียบร้อยแล้ว", "success");
+    }
+
+    /* =====================================================================
+       UI Utilities
+    ===================================================================== */
+    function toggleModal(modalId, show) {
+      const modal = document.getElementById(modalId);
+      if (show) {
+        modal.classList.remove('hidden');
+      } else {
+        modal.classList.add('hidden');
+      }
+    }
+
+    function showToast(msg, type = 'info') {
+      const box = document.getElementById('toastBox');
+      const text = document.getElementById('toastMsg');
+      const icon = document.getElementById('toastIcon');
+
+      text.innerText = msg;
+
+      if (type === 'success') {
+        icon.className = "fa-solid fa-circle-check text-emerald-400 text-base";
+      } else if (type === 'warning') {
+        icon.className = "fa-solid fa-triangle-exclamation text-amber-400 text-base";
+      } else if (type === 'error') {
+        icon.className = "fa-solid fa-circle-xmark text-rose-400 text-base";
+      } else {
+        icon.className = "fa-solid fa-circle-info text-sky-400 text-base";
+      }
+
+      box.classList.remove('hidden');
+      box.classList.remove('opacity-0');
+      box.classList.add('opacity-100');
+
+      setTimeout(() => {
+        box.classList.add('opacity-0');
+        setTimeout(() => box.classList.add('hidden'), 300);
+      }, 3500);
+    }
+  </script>
+</body>
+</html>
