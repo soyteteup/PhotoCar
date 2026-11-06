@@ -42,11 +42,17 @@
           LINE GPS Snap
           <span class="text-[10px] bg-emerald-500/20 text-emerald-400 font-mono px-1.5 py-0.5 rounded border border-emerald-500/30">AI PRO</span>
         </h1>
-        <p class="text-xs text-slate-400">รูปภาพ • ทะเบียน • ยี่ห้อ • สี • พิกัด • แผนที่</p>
+        <p class="text-xs text-slate-400">ตรวจจับ พ.ร.บ. ขนส่ง • ถ่ายอัตโนมัติ • ส่ง LINE</p>
       </div>
     </div>
     
     <div class="flex items-center space-x-2">
+      <!-- สวิตช์เปิด-ปิด โหมดตรวจจับอัตโนมัติ -->
+      <button id="autoScanToggleBtn" onclick="toggleAutoDetection()" class="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 active:scale-95 transition">
+        <i class="fa-solid fa-radar text-slate-400"></i>
+        <span id="autoScanLabel">ตรวจจับออโต้: ปิด</span>
+      </button>
+
       <!-- ป้ายแสดงสถานะ GPS -->
       <div id="gpsStatusPill" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
         <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
@@ -86,17 +92,17 @@
 
         <!-- กรอบช่วยเล็งป้ายทะเบียนและตัวรถ -->
         <div class="relative w-full h-44 flex flex-col items-center justify-center pointer-events-none">
-          <div class="relative w-[84%] max-w-xs h-28 border-2 border-dashed border-emerald-400/80 rounded-2xl flex flex-col items-center justify-between p-2 bg-black/30 backdrop-blur-xs shadow-2xl">
+          <div id="scanTargetBox" class="relative w-[86%] max-w-xs h-32 border-2 border-dashed border-emerald-400/80 rounded-2xl flex flex-col items-center justify-between p-2 bg-black/30 backdrop-blur-xs shadow-2xl transition-colors duration-300">
             <div class="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-emerald-300"></div>
             <div class="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 border-emerald-300"></div>
             <div class="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 border-emerald-300"></div>
             <div class="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-emerald-300"></div>
             
-            <div class="flex items-center gap-1.5 text-[11px] text-emerald-300 font-semibold bg-black/70 px-2.5 py-0.5 rounded-full border border-emerald-500/40">
-              <i class="fa-solid fa-car-rear text-xs"></i> กรอบเล็งป้ายทะเบียนรถ
+            <div id="scanTargetLabel" class="flex items-center gap-1.5 text-[11px] text-emerald-300 font-semibold bg-black/70 px-2.5 py-0.5 rounded-full border border-emerald-500/40">
+              <i class="fa-solid fa-car-rear text-xs"></i> กรอบตรวจจับรถ & พ.ร.บ. ขนส่ง
             </div>
-            <div class="text-[10px] text-slate-300 text-center font-medium">
-              AI วิเคราะห์ทะเบียน ยี่ห้อ สี และประเภทรถอัตโนมัติ
+            <div id="scanTargetStatus" class="text-[10px] text-slate-300 text-center font-medium">
+              พร้อมวิเคราะห์สภาพรถ, ทะเบียน, ดัดแปลง หรือผิดประเภท
             </div>
             <div class="scanner-line absolute inset-x-2 h-1"></div>
           </div>
@@ -122,11 +128,22 @@
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2.5 shadow-lg">
         <div class="flex items-center justify-between">
           <span class="text-xs font-semibold text-white flex items-center gap-1.5">
-            <i class="fa-solid fa-car-rear text-emerald-400"></i> ผลสแกนข้อมูลรถยนต์ (AI Vision)
+            <i class="fa-solid fa-car-rear text-emerald-400"></i> ผลสแกนข้อมูลรถยนต์ & พ.ร.บ.
           </span>
           <span id="plateScanBadge" class="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
             <i class="fa-solid fa-spinner fa-spin"></i> AI กำลังอ่านข้อมูลรถ...
           </span>
+        </div>
+
+        <!-- แถบแสดงข้อหาความผิด พ.ร.บ. กรมการขนส่ง -->
+        <div id="violationAlertBox" class="bg-rose-500/15 border border-rose-500/30 rounded-xl p-2.5 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-rose-400 flex items-center gap-1">
+              <i class="fa-solid fa-triangle-exclamation"></i> ฐานความผิดที่ตรวจพบ:
+            </span>
+            <span id="violationLawBadge" class="text-[10px] bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded font-mono">พ.ร.บ. ขนส่งทางบก</span>
+          </div>
+          <input type="text" id="violationInput" oninput="updateWatermarkBadge()" placeholder="เช่น ไม่ติดแผ่นป้ายทะเบียน / คอกสูงเกินกฎหมาย / ใช้รถผิดประเภท" class="w-full bg-slate-950 border border-rose-500/40 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-200 focus:outline-none focus:border-rose-400 transition" />
         </div>
 
         <!-- ฟอร์มแยก ทะเบียนรถ, ยี่ห้อรถ, สีรถ, ประเภทรถ -->
@@ -258,7 +275,7 @@
           <label class="block text-[11px] font-medium text-slate-300 mb-1">
             Google Apps Script Webhook URL:
           </label>
-          <input type="url" id="webhookUrlInput" placeholder="https://script.google.com/macros/s/AKfycbzT__EUVPG4-FkCNijn3KAj4tl9ZmuOZfvu5MOqSCoZ4m03_eOfzV6Y08zhkA9As7QZ/exec" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-emerald-500" />
+          <input type="url" id="webhookUrlInput" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-emerald-500" />
           <p class="text-[10px] text-slate-400 mt-1">URL Web App จาก Google Apps Script ที่ Deploy ไว้</p>
         </div>
       </div>
@@ -269,10 +286,13 @@
         <input type="text" id="liffIdInput" placeholder="เช่น 1234567890-AbCdEfGh" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-emerald-500" />
       </div>
 
-      <!-- ชื่อหน่วยงาน -->
-      <div class="space-y-2 border-t border-slate-800 pt-3">
-        <label class="block text-xs font-medium text-slate-300">ชื่อหน่วยงาน / หัวข้อลายน้ำบนภาพ:</label>
-        <input type="text" id="orgNameInput" value="หน่วยงานตรวจสอบและรายงานภาคสนาม" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500" />
+      <!-- ตัวเลือกการตรวจจับอัตโนมัติ -->
+      <div class="space-y-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800">
+        <label class="flex items-center justify-between text-xs font-medium text-slate-300 cursor-pointer">
+          <span>ส่ง LINE อัตโนมัติทันทีเมื่อพบการกระทำผิด:</span>
+          <input type="checkbox" id="autoSendCheckbox" class="w-4 h-4 rounded text-emerald-500 accent-emerald-500" />
+        </label>
+        <p class="text-[10px] text-slate-400">เมื่อ AI ตรวจพบรถผิด พ.ร.บ. จะถ่ายภาพและส่งเข้า LINE อัตโนมัติโดยไม่ต้องกดยืนยัน</p>
       </div>
 
       <div class="pt-2">
@@ -300,6 +320,11 @@
     let leafletMap = null;
     let mapMarker = null;
 
+    let isAutoScanRunning = false;
+    let autoScanInterval = null;
+    let isAnalyzingFrame = false;
+    let autoSendCountdownTimer = null;
+
     let currentCoordinates = {
       lat: null,
       lng: null,
@@ -315,7 +340,7 @@
       sendMode: localStorage.getItem('snap_sendMode') || 'gas',
       webhookUrl: localStorage.getItem('snap_webhookUrl') || '',
       liffId: localStorage.getItem('snap_liffId') || '',
-      orgName: localStorage.getItem('snap_orgName') || 'หน่วยงานตรวจสอบและรายงานภาคสนาม'
+      autoSend: localStorage.getItem('snap_autoSend') === 'true'
     };
 
     /* =====================================================================
@@ -325,7 +350,7 @@
       document.getElementById('lineSendMode').value = appConfig.sendMode;
       document.getElementById('webhookUrlInput').value = appConfig.webhookUrl;
       document.getElementById('liffIdInput').value = appConfig.liffId;
-      document.getElementById('orgNameInput').value = appConfig.orgName;
+      document.getElementById('autoSendCheckbox').checked = appConfig.autoSend;
       onSendModeChanged();
 
       initCamera();
@@ -334,6 +359,208 @@
       if (appConfig.liffId && typeof liff !== 'undefined') {
         initLiff(appConfig.liffId);
       }
+    });
+
+    /* =====================================================================
+       Audio Alert for Violations (Web Audio API)
+    ===================================================================== */
+    function playViolationBeep() {
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime); // High pitch A5
+        osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.35);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.36);
+      } catch (e) {
+        console.warn("Audio context not allowed or failed:", e);
+      }
+    }
+
+    /* =====================================================================
+       Auto-Detection Loop (กรมการขนส่งทางบก)
+    ===================================================================== */
+    function toggleAutoDetection() {
+      isAutoScanRunning = !isAutoScanRunning;
+      const btn = document.getElementById('autoScanToggleBtn');
+      const label = document.getElementById('autoScanLabel');
+      const box = document.getElementById('scanTargetBox');
+      const statusText = document.getElementById('scanTargetStatus');
+
+      if (isAutoScanRunning) {
+        btn.className = "flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500 text-white animate-pulse active:scale-95 transition";
+        label.innerText = "ตรวจจับออโต้: เปิด";
+        box.className = "relative w-[86%] max-w-xs h-32 border-2 border-dashed border-rose-500 rounded-2xl flex flex-col items-center justify-between p-2 bg-rose-950/20 backdrop-blur-xs shadow-2xl transition-colors duration-300";
+        statusText.innerText = "กำลังสแกนหารถผิด พ.ร.บ. ขนส่งทางบกแบบต่อเนื่อง...";
+        showToast("เปิดโหมดตรวจจับอัตโนมัติแล้ว เล็งกล้องไปที่ตัวรถ", "info");
+
+        // เริ่มลูปตรวจสอบเฟรมทุก 3.5 วินาที
+        autoScanInterval = setInterval(checkLiveFrameForViolation, 3500);
+      } else {
+        clearInterval(autoScanInterval);
+        btn.className = "flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 active:scale-95 transition";
+        label.innerText = "ตรวจจับออโต้: ปิด";
+        box.className = "relative w-[86%] max-w-xs h-32 border-2 border-dashed border-emerald-400/80 rounded-2xl flex flex-col items-center justify-between p-2 bg-black/30 backdrop-blur-xs shadow-2xl transition-colors duration-300";
+        statusText.innerText = "พร้อมวิเคราะห์สภาพรถ, ทะเบียน, ดัดแปลง หรือผิดประเภท";
+        showToast("ปิดโหมดตรวจจับอัตโนมัติ", "info");
+      }
+    }
+
+    async function checkLiveFrameForViolation() {
+      if (isAnalyzingFrame || !isAutoScanRunning) return;
+      const video = document.getElementById('videoElement');
+      if (!video.videoWidth || !video.videoHeight) return;
+
+      isAnalyzingFrame = true;
+      try {
+        // ถ่ายเฟรมตัวอย่างขนาดเล็กเพื่อส่งให้ AI วิเคราะห์อย่างรวดเร็ว
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = 640;
+        tempCanvas.height = Math.round(640 * (video.videoHeight / video.videoWidth));
+        const ctx = tempCanvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+
+        const sampleBase64 = tempCanvas.toDataURL('image/jpeg', 0.75).split(',')[1];
+
+        const payload = {
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: "ตรวจสอบภาพรถคันนี้ตามกฎหมาย พ.ร.บ. รถยนต์ พ.ศ. 2522 และ พ.ร.บ. การขนส่งทางบก พ.ศ. 2522 ของกรมการขนส่งทางบกไทย:\n" +
+                        "1. ตรวจสอบว่ามีการกระทำผิดกฎหมายหรือระเบียบหรือไม่ (hasViolation = true/false) เช่น:\n" +
+                        "   - ไม่ติดแผ่นป้ายทะเบียน หรือปิดบังป้ายทะเบียน หรือดัดแปลงป้าย\n" +
+                        "   - ดัดแปลงสภาพรถผิดกฎหมาย (เช่น คอกกระบะสูงเกินกำหนด, ล้อล้นเกินซุ้มล้อ, โหลดเตี้ย/ยกสูง, ท่อไอเสีย/ไฟท้ายแต่งผิดมาตรฐาน)\n" +
+                        "   - ใช้รถผิดประเภท (เช่น นำรถยนต์ส่วนบุคคลป้ายดำมาวิ่งรับจ้างสาธารณะ/แท็กซี่ป้ายดำผิดกฎหมาย)\n" +
+                        "   - รถบรรทุกไม่มีสติกเกอร์สะท้อนแสง หรือไม่มีป้ายเตือน\n" +
+                        "2. ระบุข้อหา/พฤติกรรมความผิด (violationType) และระบุชื่อกฎหมาย (violationLaw)\n" +
+                        "3. ระบุเลขทะเบียน (plateNumber), จังหวัด (province), ยี่ห้อ (brand), สี (color), ประเภทรถ (vehicleType)\n" +
+                        "หากไม่พบรถหรือรถปกติไม่มีความผิด ให้ hasViolation = false"
+                },
+                {
+                  inlineData: {
+                    mimeType: "image/jpeg",
+                    data: sampleBase64
+                  }
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                hasViolation: { type: "BOOLEAN", description: "ตรวจพบการกระทำผิด พ.ร.บ. ขนส่งหรือไม่" },
+                violationType: { type: "STRING", description: "รายละเอียดข้อหาหรือความผิดที่พบ" },
+                violationLaw: { type: "STRING", description: "ชื่อกฎหมาย เช่น พ.ร.บ. รถยนต์ หรือ พ.ร.บ. การขนส่งทางบก" },
+                plateNumber: { type: "STRING", description: "เลขทะเบียน" },
+                province: { type: "STRING", description: "จังหวัด" },
+                brand: { type: "STRING", description: "ยี่ห้อรถ" },
+                color: { type: "STRING", description: "สีรถ" },
+                vehicleType: { type: "STRING", description: "ประเภทรถ" }
+              },
+              required: ["hasViolation", "violationType", "violationLaw", "plateNumber", "province", "brand", "color", "vehicleType"]
+            }
+          }
+        };
+
+        const apiKey = "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          const resData = await response.json();
+          const jsonStr = resData.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (jsonStr) {
+            const result = JSON.parse(jsonStr);
+
+            // หาก AI ตรวจพบการกระทำผิดกฎหมาย ให้สั่งถ่ายภาพอัตโนมัติทันที
+            if (result.hasViolation) {
+              playViolationBeep();
+              toggleAutoDetection(); // พักโหมดสแกน
+              showToast(`🚨 ตรวจพบ: ${result.violationType}`, "warning");
+
+              // สั่งถ่ายภาพจริงความละเอียดสูงพร้อมประทับข้อมูล
+              takeSnapshotWithViolationData(result);
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Auto frame check error:", err);
+      } finally {
+        isAnalyzingFrame = false;
+      }
+    }
+
+    function takeSnapshotWithViolationData(vData) {
+      const video = document.getElementById('videoElement');
+      const canvas = document.getElementById('photoCanvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const rawImg = new Image();
+      const rawBase64 = canvas.toDataURL('image/jpeg', 0.92);
+      rawImg.onload = () => {
+        rawCapturedImage = rawImg;
+
+        // ใส่ค่าที่ตรวจพบลงในช่องข้อมูล
+        const fullPlate = vData.province && vData.province !== "ไม่ระบุ" 
+          ? `${vData.plateNumber} ${vData.province}` 
+          : vData.plateNumber;
+
+        document.getElementById('plateNumberInput').value = fullPlate || "ไม่พบป้ายทะเบียน";
+        document.getElementById('brandInput').value = vData.brand || "-";
+        document.getElementById('colorInput').value = vData.color || "-";
+        document.getElementById('vehicleTypeInput').value = vData.vehicleType || "รถยนต์";
+        document.getElementById('violationInput').value = vData.violationType || "ไม่ติดแผ่นป้าย/ดัดแปลงสภาพ";
+        document.getElementById('violationLawBadge').innerText = vData.violationLaw || "พ.ร.บ. ขนส่งทางบก";
+
+        const badge = document.getElementById('plateScanBadge');
+        badge.className = "text-[10px] px-2 py-0.5 rounded-full font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1";
+        badge.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ตรวจพบรถผิด พ.ร.บ.`;
+
+        applyStampToCanvas();
+        stampedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        displayPreview(stampedDataUrl);
+
+        // หากผู้ใช้เปิดตัวเลือก "ส่ง LINE อัตโนมัติ" ในหน้าตั้งค่า
+        if (appConfig.autoSend) {
+          triggerAutoSendCountdown();
+        }
+      };
+      rawImg.src = rawBase64;
+    }
+
+    function triggerAutoSendCountdown() {
+      let secondsLeft = 3;
+      showToast(`⚡ จะส่งเข้า LINE อัตโนมัติใน ${secondsLeft} วินาที (กด 'ถ่ายใหม่' เพื่อยกเลิก)`, "info");
+      
+      autoSendCountdownTimer = setInterval(() => {
+        secondsLeft--;
+        if (secondsLeft <= 0) {
+          clearInterval(autoSendCountdownTimer);
+          dispatchToLine();
+        } else {
+          showToast(`⚡ จะส่งเข้า LINE อัตโนมัติใน ${secondsLeft} วินาที...`, "info");
+        }
+      }, 1000);
+    }
     });
 
     /* =====================================================================
@@ -506,9 +733,11 @@
       const brandInput = document.getElementById('brandInput');
       const colorInput = document.getElementById('colorInput');
       const typeInput = document.getElementById('vehicleTypeInput');
+      const violationInput = document.getElementById('violationInput');
+      const violationLawBadge = document.getElementById('violationLawBadge');
 
       badge.className = "text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1";
-      badge.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> AI กำลังอ่านข้อมูลรถ...`;
+      badge.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> AI กำลังอ่านข้อมูลรถ & ตรวจสอบ พ.ร.บ....`;
 
       try {
         const base64Data = imageDataUrl.split(',')[1];
@@ -518,7 +747,10 @@
               role: "user",
               parts: [
                 {
-                  text: "ตรวจสอบภาพนี้เพื่อระบุและอ่านข้อมูลรถยนต์อย่างละเอียด: 1. ป้ายทะเบียนรถ หมวดอักษร ตัวเลข และจังหวัด 2. ยี่ห้อรถ (เช่น Toyota, Honda, Isuzu, Mazda, Ford ฯลฯ) 3. สีของตัวรถ (เช่น สีขาว, สีดำ, สีบรอนซ์เงิน, สีเทา, สีแดง) 4. ประเภทของรถ (เช่น รถเก๋ง, รถกระบะ, รถตู้, รถบรรทุก, รถ SUV, รถมอเตอร์ไซค์) ตอบเป็น JSON ตามโครงสร้างที่กำหนด หากไม่พบป้ายทะเบียนให้ตั้ง detected=false"
+                  text: "ตรวจสอบภาพนี้เพื่อระบุข้อมูลรถและตรวจหาการกระทำผิดตาม พ.ร.บ. รถยนต์ และ พ.ร.บ. การขนส่งทางบก:\n" +
+                        "1. ตรวจสอบว่ามีการกระทำผิดกฎหมายหรือระเบียบกรมการขนส่งหรือไม่ (hasViolation = true/false) เช่น ไม่ติดแผ่นป้ายทะเบียน, ปิดบังป้าย, ดัดแปลงสภาพตัวรถ (คอกสูง, ยางล้น, โหลดเตี้ย, ไฟผิดมาตรฐาน), หรือใช้รถผิดประเภท\n" +
+                        "2. ระบุข้อหา/พฤติการณ์ความผิด (violationType) และกฎหมายที่เกี่ยวข้อง (violationLaw)\n" +
+                        "3. ระบุเลขทะเบียนและจังหวัด, ยี่ห้อรถ, สีตัวรถ และประเภทรถ"
                 },
                 {
                   inlineData: {
@@ -534,6 +766,9 @@
             responseSchema: {
               type: "OBJECT",
               properties: {
+                hasViolation: { type: "BOOLEAN" },
+                violationType: { type: "STRING" },
+                violationLaw: { type: "STRING" },
                 detected: { type: "BOOLEAN", description: "ตรวจพบป้ายทะเบียนหรือไม่" },
                 plateNumber: { type: "STRING", description: "หมวดอักษรและตัวเลข เช่น 1กข 9999 หรือ ไม่พบป้าย" },
                 province: { type: "STRING", description: "จังหวัดบนป้าย เช่น กรุงเทพมหานคร หรือ ไม่ระบุ" },
@@ -541,7 +776,7 @@
                 color: { type: "STRING", description: "สีรถ เช่น สีขาว หรือ ไม่ระบุ" },
                 vehicleType: { type: "STRING", description: "ประเภทรถ เช่น รถกระบะ หรือ รถเก๋ง" }
               },
-              required: ["detected", "plateNumber", "province", "brand", "color", "vehicleType"]
+              required: ["hasViolation", "violationType", "violationLaw", "detected", "plateNumber", "province", "brand", "color", "vehicleType"]
             }
           }
         };
@@ -571,27 +806,26 @@
 
         if (jsonText) {
           const parsed = JSON.parse(jsonText);
-          if (parsed.detected && parsed.plateNumber && parsed.plateNumber !== "ไม่พบป้าย") {
-            const fullPlate = parsed.province && parsed.province !== "ไม่ระบุ" 
-              ? `${parsed.plateNumber} ${parsed.province}` 
-              : parsed.plateNumber;
+          const fullPlate = parsed.province && parsed.province !== "ไม่ระบุ" 
+            ? `${parsed.plateNumber} ${parsed.province}` 
+            : parsed.plateNumber;
 
-            plateInput.value = fullPlate;
-            brandInput.value = parsed.brand || "-";
-            colorInput.value = parsed.color || "-";
-            typeInput.value = parsed.vehicleType || "รถยนต์";
-
-            badge.className = "text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1";
-            badge.innerHTML = `<i class="fa-solid fa-circle-check"></i> ตรวจพบข้อมูลรถสำเร็จ`;
-            showToast(`ตรวจพบทะเบียน: ${fullPlate}`, "success");
-          } else {
-            plateInput.value = "";
-            brandInput.value = parsed.brand || "-";
-            colorInput.value = parsed.color || "-";
-            typeInput.value = parsed.vehicleType || "รถยนต์";
-
+          plateInput.value = (parsed.detected && parsed.plateNumber !== "ไม่พบป้าย") ? fullPlate : "";
+          brandInput.value = parsed.brand || "-";
+          colorInput.value = parsed.color || "-";
+          typeInput.value = parsed.vehicleType || "รถยนต์";
+          
+          if (parsed.hasViolation) {
+            violationInput.value = parsed.violationType || "ตรวจพบการกระทำผิด พ.ร.บ.";
+            violationLawBadge.innerText = parsed.violationLaw || "พ.ร.บ. ขนส่งทางบก";
             badge.className = "text-[10px] px-2 py-0.5 rounded-full font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1";
-            badge.innerHTML = `<i class="fa-solid fa-circle-question"></i> ไม่พบป้าย (พิมพ์เองได้)`;
+            badge.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ตรวจพบรถผิด พ.ร.บ.`;
+            playViolationBeep();
+          } else {
+            violationInput.value = "สภาพรถและป้ายปกติ";
+            violationLawBadge.innerText = "ปกติ";
+            badge.className = "text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1";
+            badge.innerHTML = `<i class="fa-solid fa-circle-check"></i> ตรวจสอบข้อมูลรถสำเร็จ`;
           }
         }
       } catch (error) {
@@ -649,27 +883,28 @@
       const brandVal = document.getElementById('brandInput')?.value?.trim() || "";
       const colorVal = document.getElementById('colorInput')?.value?.trim() || "";
       const typeVal = document.getElementById('vehicleTypeInput')?.value?.trim() || "";
+      const violationVal = document.getElementById('violationInput')?.value?.trim() || "";
+      const hasViolation = violationVal && violationVal !== "สภาพรถและป้ายปกติ";
 
       const baseFontSize = Math.max(16, Math.floor(width * 0.026));
       const padding = Math.floor(width * 0.035);
       
-      const hasVehicleInfo = plateVal.length > 0 || brandVal.length > 0 || colorVal.length > 0;
-      const boxHeight = baseFontSize * (hasVehicleInfo ? 10.2 : 8);
+      const boxHeight = baseFontSize * (hasViolation ? 11 : 9);
       const boxY = height - boxHeight - padding;
 
-      // กล่องพื้นหลังลายน้ำ Frosted Glass
+      // กล่องพื้นหลังลายน้ำ Frosted Glass (ไม่มีหน่วยงาน)
       ctx.save();
-      ctx.fillStyle = "rgba(10, 15, 29, 0.85)";
-      ctx.shadowColor = "rgba(0, 0, 0, 0.65)";
+      ctx.fillStyle = "rgba(10, 15, 29, 0.88)";
+      ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
       ctx.shadowBlur = 22;
       roundRect(ctx, padding, boxY, width - (padding * 2), boxHeight, Math.floor(width * 0.022));
       ctx.fill();
       ctx.restore();
 
-      // ขอบลายน้ำ
+      // ขอบลายน้ำ (สีแดงเมื่อผิด พ.ร.บ. / สีเขียวเมื่อปกติ)
       ctx.save();
-      ctx.strokeStyle = "rgba(16, 185, 129, 0.45)";
-      ctx.lineWidth = Math.max(1.5, Math.floor(width * 0.0025));
+      ctx.strokeStyle = hasViolation ? "rgba(239, 68, 68, 0.8)" : "rgba(16, 185, 129, 0.5)";
+      ctx.lineWidth = Math.max(2, Math.floor(width * 0.003));
       roundRect(ctx, padding, boxY, width - (padding * 2), boxHeight, Math.floor(width * 0.022));
       ctx.stroke();
       ctx.restore();
@@ -677,25 +912,26 @@
       const textX = padding + Math.floor(width * 0.03);
       let textY = boxY + baseFontSize * 1.45;
 
-      // ชื่อหน่วยงาน
-      ctx.fillStyle = "#10b981";
-      ctx.font = `bold ${Math.floor(baseFontSize * 1.05)}px 'Prompt', sans-serif`;
-      ctx.fillText(`📍 ${appConfig.orgName}`, textX, textY);
-
-      // ทะเบียนรถ, ยี่ห้อ, สี, ประเภทรถ
-      if (hasVehicleInfo) {
-        textY += baseFontSize * 1.35;
-        ctx.fillStyle = "#facc15";
+      // แสดงฐานความผิด พ.ร.บ. เด่นชัดด้านบนสุด
+      if (hasViolation) {
+        ctx.fillStyle = "#ef4444";
         ctx.font = `bold ${Math.floor(baseFontSize * 1.15)}px 'Prompt', sans-serif`;
-        const plateDisplay = plateVal ? `🚗 ทะเบียน: ${plateVal}` : `🚗 ไม่ระบุทะเบียน`;
-        ctx.fillText(plateDisplay, textX, textY);
-
-        textY += baseFontSize * 1.25;
-        ctx.fillStyle = "#fef08a";
-        ctx.font = `500 ${Math.floor(baseFontSize * 0.95)}px 'Prompt', sans-serif`;
-        const vehicleDesc = `🏷️ ${brandVal || '-'} | 🎨 ${colorVal || '-'} | 🚙 ${typeVal || 'รถยนต์'}`;
-        ctx.fillText(vehicleDesc, textX, textY);
+        ctx.fillText(`🚨 ข้อหา/ความผิด: ${violationVal}`, textX, textY);
+        textY += baseFontSize * 1.35;
       }
+
+      // ทะเบียนรถ
+      ctx.fillStyle = "#facc15";
+      ctx.font = `bold ${Math.floor(baseFontSize * 1.15)}px 'Prompt', sans-serif`;
+      const plateDisplay = plateVal ? `🚗 ทะเบียน: ${plateVal}` : `🚗 ไม่ระบุทะเบียน (ไม่ติดแผ่นป้าย)`;
+      ctx.fillText(plateDisplay, textX, textY);
+
+      // ยี่ห้อ สี ประเภทรถ
+      textY += baseFontSize * 1.25;
+      ctx.fillStyle = "#fef08a";
+      ctx.font = `500 ${Math.floor(baseFontSize * 0.95)}px 'Prompt', sans-serif`;
+      const vehicleDesc = `🏷️ ${brandVal || '-'} | 🎨 ${colorVal || '-'} | 🚙 ${typeVal || 'รถยนต์'}`;
+      ctx.fillText(vehicleDesc, textX, textY);
 
       // วันเวลา
       textY += baseFontSize * 1.35;
@@ -767,6 +1003,7 @@
     }
 
     function resetToCamera() {
+      if (autoSendCountdownTimer) clearInterval(autoSendCountdownTimer);
       document.getElementById('previewContainer').classList.add('hidden');
       document.getElementById('previewControls').classList.add('hidden');
       document.getElementById('cameraContainer').classList.remove('hidden');
@@ -784,15 +1021,18 @@
     }
 
     /* =====================================================================
-       LINE Integration Engine
+       LINE Integration Engine (ตัดหน่วยงานออก)
     ===================================================================== */
     async function dispatchToLine() {
+      if (autoSendCountdownTimer) clearInterval(autoSendCountdownTimer);
       const sendBtn = document.getElementById('sendLineBtn');
       const note = document.getElementById('reportNoteInput').value.trim();
       const plate = document.getElementById('plateNumberInput')?.value.trim() || "ไม่ระบุป้ายทะเบียน";
       const brand = document.getElementById('brandInput')?.value.trim() || "-";
       const color = document.getElementById('colorInput')?.value.trim() || "-";
       const vehicleType = document.getElementById('vehicleTypeInput')?.value.trim() || "รถยนต์";
+      const violation = document.getElementById('violationInput')?.value.trim() || "ตรวจสอบทั่วไป";
+      const violationLaw = document.getElementById('violationLawBadge')?.innerText || "ระเบียบกรมการขนส่งทางบก";
       
       const lat = currentCoordinates.lat || 0;
       const lng = currentCoordinates.lng || 0;
@@ -801,7 +1041,7 @@
 
       const mode = appConfig.sendMode;
 
-      // MODE 1: Google Apps Script Webhook (ส่งรูปภาพธรรมดา + ข้อความส่วนตัว)
+      // MODE 1: Google Apps Script Webhook (ไม่มีหน่วยงาน)
       if (mode === 'gas') {
         if (!appConfig.webhookUrl) {
           showToast("ยังไม่ได้ตั้งค่า Google Apps Script Webhook URL", "warning");
@@ -823,10 +1063,11 @@
             brand: brand,
             color: color,
             vehicleType: vehicleType,
+            violation: violation,
+            violationLaw: violationLaw,
             mapUrl: mapUrl,
             note: note,
-            timestamp: nowStr,
-            orgName: appConfig.orgName
+            timestamp: nowStr
           };
 
           await fetch(appConfig.webhookUrl, {
@@ -836,7 +1077,7 @@
             body: JSON.stringify(payload)
           });
 
-          showToast("ส่งรูปภาพและข้อมูลรถเข้า LINE ส่วนตัวสำเร็จแล้ว!", "success");
+          showToast("ส่งรูปภาพและข้อหาความผิดเข้า LINE สำเร็จแล้ว!", "success");
         } catch (error) {
           console.error("Webhook dispatch error:", error);
           showToast("ส่งไม่สำเร็จ กรุณาตรวจสอบ Webhook URL", "error");
@@ -847,7 +1088,7 @@
         return;
       }
 
-      // MODE 2: LINE LIFF
+      // MODE 2: LINE LIFF (ไม่มีหน่วยงาน)
       if (mode === 'liff') {
         if (!appConfig.liffId) {
           showToast("โปรดใส่ LIFF ID ในหน้าตั้งค่าก่อนใช้งาน", "warning");
@@ -866,7 +1107,7 @@
             await liff.shareTargetPicker([
               {
                 type: "text",
-                text: `🚗 [รายงานบันทึกข้อมูลรถ & พิกัด]\n🚘 ป้ายทะเบียน: ${plate}\n🏷️ ยี่ห้อ: ${brand}\n🎨 สี: ${color}\n🚙 ประเภท: ${vehicleType}\n🌐 พิกัด: ${lat.toFixed(6)}, ${lng.toFixed(6)}\n🏠 ที่อยู่: ${currentCoordinates.address}\n🗺️ แผนที่: ${mapUrl}\n📅 เวลา: ${nowStr}\n📝 บันทึก: ${note || '-'}`
+                text: `🚨 [รายงานรถผิด พ.ร.บ. ขนส่ง]\n⚠️ ข้อหา: ${violation}\n🚘 ป้ายทะเบียน: ${plate}\n🏷️ ยี่ห้อ: ${brand}\n🎨 สี: ${color}\n🚙 ประเภท: ${vehicleType}\n🌐 พิกัด: ${lat.toFixed(6)}, ${lng.toFixed(6)}\n🏠 ที่อยู่: ${currentCoordinates.address}\n🗺️ แผนที่: ${mapUrl}\n📅 เวลา: ${nowStr}\n📝 บันทึก: ${note || '-'}`
               }
             ]);
             showToast("ส่งเข้า LINE เรียบร้อยแล้ว!", "success");
@@ -882,12 +1123,13 @@
         return;
       }
 
-      // MODE 3: Direct LINE App Share
+      // MODE 3: Direct LINE App Share (ไม่มีหน่วยงาน)
       if (mode === 'direct') {
         downloadStampedPhoto();
 
         const shareMessage = encodeURIComponent(
-          `🚗 [รายงานบันทึกข้อมูลรถ & พิกัด]\n` +
+          `🚨 [รายงานรถผิด พ.ร.บ. ขนส่ง]\n` +
+          `⚠️ ข้อหา: ${violation}\n` +
           `🚘 ป้ายทะเบียน: ${plate}\n` +
           `🏷️ ยี่ห้อรถ: ${brand}\n` +
           `🎨 สีรถ: ${color}\n` +
@@ -940,12 +1182,12 @@
       appConfig.sendMode = document.getElementById('lineSendMode').value;
       appConfig.webhookUrl = document.getElementById('webhookUrlInput').value.trim();
       appConfig.liffId = document.getElementById('liffIdInput').value.trim();
-      appConfig.orgName = document.getElementById('orgNameInput').value.trim() || 'หน่วยงานภาคสนาม';
+      appConfig.autoSend = document.getElementById('autoSendCheckbox').checked;
 
       localStorage.setItem('snap_sendMode', appConfig.sendMode);
       localStorage.setItem('snap_webhookUrl', appConfig.webhookUrl);
       localStorage.setItem('snap_liffId', appConfig.liffId);
-      localStorage.setItem('snap_orgName', appConfig.orgName);
+      localStorage.setItem('snap_autoSend', appConfig.autoSend ? 'true' : 'false');
 
       if (appConfig.liffId && typeof liff !== 'undefined') {
         initLiff(appConfig.liffId);
